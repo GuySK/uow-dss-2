@@ -1,0 +1,416 @@
+
+
+Crime Analysis
+===
+
+Crime in San Francisco and Seattle
+---
+
+### Purpose
+
+The purpose of this document is to investigate by visual means the situation of crime and some possible correlations between variables related to crime in two American cities, San Francisco, Ca and Seattle, Wa.
+
+### Introduction
+
+According to the FBI, index crime in the United States includes violent crime and property crime. Violent crime consists of four criminal offenses: murder and non-negligent manslaughter, forcible rape, robbery, and aggravated assault; property crime consists of burglary, larceny, motor vehicle theft, and arson.
+
+```{r general, echo=FALSE}
+setwd("~/Google Drive/Training/uow-dss-spec/prog-assgn/Peer_Review")
+```
+
+### Necessary conditions for making comparisons
+
+```{r Offenses, echo=FALSE}
+sf = read.table(file = 'sanfrancisco_incidents_summer_2014.csv', header = T, sep = ',')
+seattle = read.table(file = 'seattle_incidents_summer_2014.csv', 
+                     header = T, sep = ',')
+sf_cats = data.frame(Cat = unique(as.character(sf$Category)), UCR = NA)
+seattle_cats = data.frame(Cat = unique(as.character(seattle$Summarized.Offense.Description)), UCR = NA)
+```
+
+Inspecting the available datasets, we note that both Police Departments use different Offense categories in their reports. There are `r length(levels(sf_cats$Cat))` different crime categories in the San Francisco dataset, while the one from Seattle includes `r length(levels(seattle_cats$Cat))` categories.
+
+#### A standard for Offense Categories
+
+If we want to compare statistics related to different categories of crime for both cities,we need to establish first a common definition for the different kind of law offenses.
+
+A common ground for classifying criminal activities can be found in the FBI Uniform Crime Reporting program. The program was conceived in 1929 by the International Association of Chiefs of Police to meet the need for reliable uniform crime statistics for the nation and it is now in charge of the FBI.
+
+Each UCR offense belongs to one of three categories: Crimes Against Persons, Crimes Against Property, and Crimes Against Society. 
+
+We load the UCR Crime categoriess from the [FBI UCR Web site](https://www.fbi.gov/about-us/cjis/ucr/)
+
+```{r UCR, echo=FALSE}
+library(knitr)
+source('UCR_Offenses.r') # Loads FBI UCR Categories
+UCR = data.frame(Offense = c(person, property, society, NaC), Type = NA, 
+                 stringsAsFactors = F)
+UCR$Type[UCR$Offense %in% person] = 'Person'
+UCR$Type[UCR$Offense %in% property] = 'Property'
+UCR$Type[UCR$Offense %in% society] = 'Society'
+UCR$Type[UCR$Offense %in% NaC] = 'Not a Crime'
+UCR = rbind(UCR, c(Offense = 'Not a Crime', Type = 'Not a Crime'))
+UCR = rbind(UCR, c(Offense = 'Prostitution', Type = 'Society'))
+UCR$Offense = toupper(UCR$Offense)
+kable(UCR, format = 'markdown')
+```
+
+Crimes Against Persons, e.g., murder, rape, and assault, are those whose victims are always individuals. The object of Crimes Against Property, e.g., robbery, bribery, and burglary, is to obtain money, property, or some other benefit. Crimes
+Against Society, e.g., gambling, prostitution, and drug violations, represent society’s prohibition against engaging in certain types of activity; they are typically victimless crimes in which property is not the object.
+
+We have taken the liberty to add two new categories to the original FBI's Offense categories ('NOT A CRIME' and 'PROSTITUTION') since this will prove useful for better classifying and comparing criminal activities later.
+
+After assigning each Offense category used by the local Police Departments to the corresponding one in the UCR dataset we get the following conversion tables.
+
+```{r Convert_to_UCR, echo=FALSE}
+# San Francisco
+for (i in 1:nrow(sf_cats)){
+    idx = grep(pattern = sf_cats$Cat[i], x = UCR$Offense, value = F)
+    sf_cats$UCR[i] = ifelse(length(idx) == 0, 'Not Found', UCR$Offense[idx])
+} 
+
+# Assigining missing categories in the SF dataset
+# LIQUOR LAW VIOLATIONS  
+sf_cats$UCR[sf_cats$Cat == 'LIQUOR LAWS'] = UCR$Offense[28]
+# WEAPON LAW VIOLATIONS  
+sf_cats$UCR[sf_cats$Cat == 'WEAPON LAWS'] = UCR$Offense[22] 
+# COUNTERFEITING/FORGERY  
+sf_cats$UCR[sf_cats$Cat == 'FORGERY/COUNTERFEITING'] = UCR$Offense[9] 
+# FAMILY , NONVIOLENT  
+sf_cats$UCR[sf_cats$Cat == 'FAMILY OFFENSES'] = UCR$Offense[27]
+# Non-criminal actions and reports
+sf_cats$UCR[sf_cats$Cat %in% c('NON-CRIMINAL',
+                               'SUSPICIOUS OCC',
+                               'MISSING PERSON',
+                               'WARRANTS',
+                               'SUICIDE',
+                               'RUNAWAY')] = UCR$Offense[32]
+sf_cats$UCR[sf_cats$UCR == 'Not Found'] = NA
+
+# Seattle
+for (i in 1:nrow(seattle_cats)){
+    idx = grep(pattern = seattle_cats$Cat[i], x = UCR$Offense, value = F)
+    seattle_cats$UCR[i] = ifelse(length(idx) == 0, 'Not Found', UCR$Offense[idx])
+} 
+
+# Assigining missing categories in the Seattle dataset 
+# DESTRUCTION/DAMAGE/VANDALISM OF PROPERTY  
+seattle_cats$UCR[seattle_cats$Cat ==  'PROPERTY DAMAGE'] = UCR$Offense[10]  
+# LARCENY/THEFT   
+seattle_cats$UCR[seattle_cats$Cat %in% c('MAIL THEFT',
+                                         'CAR PROWL',
+                                         'BURGLARY-SECURE PARKING-RES', 
+                                         'PICKPOCKET', 
+                                         'BIKE THEFT',
+                                         'SHOPLIFTING',
+                                         'THEFT OF SERVICES',
+                                         'PURSE SNATCH')] = UCR$Offense[14]
+# DRUG/NARCOTIC   
+seattle_cats$UCR[seattle_cats$Cat == 'NARCOTICS']  = UCR$Offense[19] 
+# DISORDERLY CONDUCT
+seattle_cats$UCR[seattle_cats$Cat %in% c('THREATS', 
+                                         'DISPUTE', 
+                                         'DISTURBANCE', 
+                                         'VIOLATION OF COURT ORDER', 
+                                         'BIAS INCIDENT', 
+                                         'RECKLESS BURNING', 
+                                         'FIREWORK', 
+                                         'PUBLIC NUISANCE')] = UCR$Offense[24]
+# DUI
+seattle_cats$UCR[seattle_cats$Cat == 'DUI']  = UCR$Offense[25] 
+# LIQUOR LAW VIOLATIONS
+seattle_cats$UCR[seattle_cats$Cat == 'LIQUOR VIOLATION']  = UCR$Offense[28] 
+# Non-criminal actions and reports
+seattle_cats$UCR[seattle_cats$Cat %in% c('LOST PROPERTY',
+                                         'WARRANT ARREST',
+                                         'TRAFFIC',
+                                         'RECOVERED PROPERTY',
+                                         'INJURY',
+                                         'ANIMAL COMPLAINT',
+                                         'RUNAWAY')] = UCR$Offense[32]
+seattle_cats$UCR[seattle_cats$UCR == 'Not Found'] = NA
+```
+
+##### Offense Category Conversions for San Francisco
+
+```{r oc1, echo=FALSE}
+kable(sf_cats)
+```
+
+##### Offense Category Conversions for Seattle
+
+```{r oc2, echo=FALSE}
+kable(seattle_cats)
+```
+
+```{r add_UCR_data, echo = FALSE}
+sf = merge(x = sf, y = sf_cats, by.x = 'Category', by.y = 'Cat', all.x = T)
+sf =      merge(x = sf, y = UCR, by.x = 'UCR', by.y = 'Offense', all.x = T)
+seattle = merge(x = seattle, y = seattle_cats, 
+                 by.x = 'Summarized.Offense.Description',
+                 by.y = 'Cat', all.x = T)
+names(seattle)[1] = 'Category'
+seattle = merge(x = seattle, y = UCR, by.x = 'UCR', by.y = 'Offense', all.x = T)
+
+```
+
+#### A common representation for Dates and Times
+
+As a last step in the transformation of the data sets, we need to use common date and time formats if we want to be able to research criminal activities from a time reference viewpoint. We create the variable *TimeStamp* in both datasets. Finally, we get rid of some variables we will not use in this study. Below a sample of a datapoint from each dataset.
+
+```{r dateNtimes, echo=FALSE}
+# Convertion of Dates and Times
+# San francisco
+sf$TimeStamp = strptime(paste(as.character(sf$Date), as.character(sf$Time)), '%m/%d/%Y %H:%M', tz = 'PST')
+
+
+# Conversion of Dates and Times
+# Seattle
+seattle$TimeStamp = strptime(as.character(
+                    seattle$Occurred.Date.or.Date.Range.Start), 
+                    '%m/%d/%Y %I:%M:%S %p', tz = 'PST')
+
+# show_rec function prints records nicely 
+show_rec = function(df, n=1, var=NA){
+  cat('A', deparse(substitute(df)), 'record contains:\n')
+  col_range = 1:ncol(df)
+  if(!is.na(var)) {
+    col_range = which(names(df) == var)
+  }
+  for (i in col_range) {
+  cat(names(df)[i], ': ', as.character(df[n, i]), '\n', sep = '')
+  }
+}
+
+# show example of timestamp
+# show_rec(sf, var='TimeStamp')
+
+# Variable selection
+sf = sf[, names(sf)[c(1,2,4,8,13,15,16)]]
+seattle = seattle[, names(seattle)[c(1,2,13,14,18,21,22)]]
+
+# show record formats
+show_rec(sf, n=2947)
+show_rec(seattle, n=1892)
+
+```
+
+#### Including population data
+
+In order to make fair comparisons we need to take into account some demographic information, such as the population of each city. Population data has been taken from the Wikipedia pages dedicated to each city.
+
+``` {r demographics, echo=FALSE}
+demo = data.frame(City= 'San Francisco', Population = 852469, stringsAsFactors = F)
+demo = rbind(demo, c(City = 'Seattle', Population = 662400))
+demo$Population = as.integer(demo$Population)
+kable(demo)
+```
+
+#### Comparing raw numbers
+
+We are now allowed to compare values for each standardized Offense category. As we can see below, we should study each Offense category in particular and solve many intriguing differences (e.g. take a look at those categories with considerable values in one city and no cases in the other -NA values-).
+
+```{r stats1, echo=FALSE}
+sf$cnt = 1
+crime_sf = aggregate(x = sf$cnt, by = list(sf$UCR), FUN = sum)
+names(crime_sf) = c('Offense', 'SF')
+
+seattle$cnt = 1
+crime_seattle = aggregate(x = seattle$cnt, by = list(seattle$UCR), FUN = sum)
+names(crime_seattle) = c('Offense', 'Seattle')
+
+crime = merge(x = crime_sf, y = crime_seattle, by = 'Offense', all.x = T, all.y = T)
+crime = merge(x = crime, y = UCR, by = 'Offense', all.x = T, all.y = F)
+kable(crime, format = 'markdown')
+```
+
+#### Exploring Crime Types
+
+Since we are interested in comparing crime in general and in discovering crime patterns related to external variables, we will from now on group offenses according to their types: Crimes agains Persons, Crimes against Property and Crimes against Society.
+
+Comparing total number of cases of each type for both cities we get:
+
+```{r numberCrunch1, echo=FALSE}
+# aggregate by Type
+crime_type = aggregate(cbind(SF, Seattle) ~ Type, FUN = sum, data = crime)
+
+# computing crime rate (nr of offenses per 100,000 inhabitants)
+dfrate = function(df, n=1){
+  dfr = df  
+  dfr$SF =      round((df$SF / demo[1, 'Population']) * 1e+05, n) 
+  dfr$Seattle = round((df$Seattle / demo[2, 'Population']) * 1e+05, n)
+  dfr  
+}
+```
+
+```{r vis_crime_type, echo=FALSE}
+row.names(crime_type) = crime_type$Type
+barplot(as.matrix(crime_type[crime_type$Type != 'Not a Crime',-1]), 
+        col = heat.colors(n = 3, alpha = 0.4), 
+        legend.text = T, args.legend = list(x = 0.50, y = 25000, cex = 0.7))
+title(main = 'Crime Types', ylab = 'Nr Offenses', xlab = 'City')
+```
+
+Except for Crimes against Property, the situation seems similar for both cities. Actually, we should take into account their corresponding populations. 
+
+Adjusting by population we will get figures corresponding to crime rates, a more realistic approach. We will present figures as the number of offenses in each city to the population of that city, expressed per 100,000 inhabitants.
+
+```{r vis_crime_rate, echo=FALSE}
+crime_type_r = dfrate(crime_type)
+row.names(crime_type_r) = crime_type_r$Type
+barplot(as.matrix(crime_type_r[crime_type_r$Type != 'Not a Crime',-1]), 
+        col = heat.colors(n = 3, alpha = 0.4), 
+        legend.text = T, args.legend = list(x = 0.50, y = 3000, cex = 0.7))
+title(main = 'Crime Rates', ylab = 'Nr Offenses  per 100,000 inhab.', xlab = 'City')
+```
+
+We can now easily see that crime rate in Seattle almost double that of San Francisco, and that that is mostly due to the high ratio of offenses against property and society.
+
+#### Evolution of crime along a time axis
+
+A different approach is to see how the different type of offenses evolve with time for each city. This could be useful to try to find out patterns related to common characteristics, like day of week, holidays, etc. 
+
+```{r offpDate, echo=FALSE}
+# Offenses per date and type 
+sf$Date = as.Date(sf$TimeStamp)
+seattle$Date = as.Date(seattle$TimeStamp)
+sf_Off = aggregate(cnt ~ Date + Type, FUN = sum, data = sf)
+seattle_Off = aggregate(cnt ~ Date + Type, FUN = sum, data = seattle)
+```
+
+```{r visual_1, echo=FALSE}
+# Comparing Crime rates in a time series
+rate = function(x, city, n = 1){
+  round(x / demo[tolower(demo$City) == tolower(city), 2] * 1e+5, n)
+}
+
+plt_crime = function(){
+  sf_plot = sf_Off[sf_Off$Type == filter, c('Date', 'cnt')]
+  seattle_plot = seattle_Off[seattle_Off$Type == filter, c('Date', 'cnt')]
+  sf_plot$cnt = rate(sf_plot$cnt, 'san francisco')
+  seattle_plot$cnt = rate(seattle_plot$cnt, 'seattle')
+  
+  min_cnt = min(c(sf_plot$cnt, seattle_plot$cnt))
+  max_cnt = max(c(sf_plot$cnt, seattle_plot$cnt))
+  weekend = weekdays(sf_plot$Date, abbreviate = T) %in% c("sáb", "dom")
+  
+  plot(seattle_plot$cnt, col = 'blue', type = 'l', ylim = c(min_cnt, max_cnt),
+       xlab = '', ylab = '')
+  lines(sf_plot$cnt, col = 'red')
+  abline(h = mean(sf_plot$cnt), col = 'red', lty = 2)
+  abline(h = mean(seattle_plot$cnt), col = 'blue', lty = 2)
+  title(main = paste('Crime Rate \n Crimes against ', filter), 
+         ylab = 'Offenses / 100,000 inhab.', xlab = 'Jun to Aug 2014')
+  legend('topright', legend = c('SF', 'Seattle'), text.col = c('red', 'blue'), cex=.8, bty = 'o', y.intersp = 0.8)
+}
+
+filter = 'Person'
+plt_crime()
+
+filter = 'Property'
+plt_crime()
+
+filter = 'Society'
+plt_crime()
+
+```
+
+Again, it is easy to see from these plots that, except for Crimes against Persons, Seattle almost doubles San Francisco's crime rates. But the value added by this kind of plot resides in that we can see how crime rates relate to each other at a particular time.
+
+For instance, we note there are two spikes on the same day close to day number 20 in the graphs related to offenses against society. Day 20 is Friday 20th of June, 2014. It is not a national holiday. Are there any hiden common factors making this day particular? 
+
+#### Including external variables: Temperature
+
+We will expand on this idea and investigate possible relationships of crime variables with external ones. In our case, we will do so with Temperature. Since we are analyzing data corresponding to the summer season, we will focus on the impact ot high temperatures with crime rates.
+
+##### Temperature records for both cities
+
+The University of Dayton's site contains files of daily average temperatures for 157 U.S. and 167 international cities. The files are updated on a regular basis and contain data from January 1, 1995 to present. Source data for this site are from the National Climatic Data Center. The data is available for research and non-commercial purposes only [here](http://academic.udayton.edu/kissock/http/Weather/citylistUS.htm)
+
+##### Average temperatures in both cities
+
+Which city is hotter in the summertime? Below, a comparison of daily average temperatures in both cities. 
+
+```{r weather, echo=F}
+sf_temp = read.table(file = 'sf_temp.txt', header = F, sep = ',')
+names(sf_temp) = c('Month','Day', 'Year', 'Temp')
+seattle_temp = read.table(file = 'seattle_temp.txt', header = F, sep = ',')
+names(seattle_temp) = c('Month','Day', 'Year', 'Temp')
+boxplot(list(sf_temp$Temp, seattle_temp$Temp), 
+        names = c('San Francisco', 'Seattle'),
+        main = 'Daily Temperature\nSummer 2014', ylab = 'Fahrenheit',
+        col  = heat.colors(2, 0.2))
+```
+
+Boxplots are nice to compare central tendency statistics like the median and the variability of the data points. We can easily see in the graph above that, contrary to expectations considering latitudes, the summer season of 2014 in Seattle was hotter than in San Francisco.
+
+If we need details, we can resort to a line graph including daily averages for both cities.
+
+```{r weather2, echo=F}
+min_temp = min(c(sf_temp$Temp, seattle_temp$Temp))
+max_temp = max(c(sf_temp$Temp, seattle_temp$Temp))
+plot(sf_temp$Temp, type = 'l', col = 'red', ylim = c(min_temp, max_temp),
+     xlab = '', ylab = '')
+lines(seattle_temp$Temp, col = 'blue')
+abline(h = mean(sf_temp$Temp), col = 'red', lty = 2)
+abline(h = mean(seattle_temp$Temp), col = 'blue', lty = 2)
+title(main = 'Daily Temperatures - Summer 2014', 
+      ylab = 'Fahrenheit', xlab = 'Jun to Aug 2014')
+legend('bottomright', legend = c('SF', 'Seattle'), text.col = c('red', 'blue'), cex=.8, bty = 'n', y.intersp = 0.8,)
+
+```
+
+We can now appreciate in the graph above that June 20 was not a particularly hot day in neither city, being well below the average in both cases.  
+
+#### Are Crime rates and Temperatures related?
+
+In order to identify patterns in the relation between these two variables we transform one of them first. Instead of plotting absolute temperatures we plot  differences of temperatures and number offenses with their means (*note that we have doubled the difference of temperatures for scale reasons*)
+
+We can now look for those periods of temperatures above or below average and see if they have any impact in the number of offenses. 
+
+```{r visual_2, echo=FALSE}
+# Comparing Crime rates and temperatures
+
+plt_temps = function(df_Off, city, type){
+  
+  if (missing(type)){
+    filter = c('Person', 'Property', 'Society', 'Not a Crime')
+  } else {
+    filter = type
+  }
+  
+  tit = paste('Crime and Temp. in', city)
+  df_plot = df_Off[df_Off$Type %in% filter, c('Date', 'cnt')]
+  
+  if(tolower(city) == 'san francisco') {
+    temps = sf_temp$Temp
+    line_col = 'red'
+  } else {
+    temps = seattle_temp$Temp
+    line_col = 'blue'
+  }
+  
+  off = df_plot$cnt - mean(df_plot$cnt)
+  barplot((temps - mean(temps)) * 2, xlab = '', ylab = '', 
+          col = heat.colors(n = 1,alpha = 0.10),
+          ylim = c(min(off), max(off)))
+  lines(off, col = line_col)
+  title(main = paste0(tit, '\nCrimes against ', filter), cex = 0.55, 
+        ylab = 'Off - Temp.Var', 
+        xlab = 'Jun to Aug 2014')  
+}
+par(mfrow = c(1,1))
+par(mar = c(5.1, 4.1, 4.1, 2.1))
+plt_temps(sf_Off, 'San Francisco', 'Person')
+plt_temps(sf_Off, 'Seattle', 'Person')
+
+plt_temps(sf_Off, 'San Francisco', 'Property')
+plt_temps(sf_Off, 'Seattle', 'Property')
+
+plt_temps(sf_Off, 'San Francisco', 'Society')
+plt_temps(sf_Off, 'Seattle', 'Society')
+
+```
+
+Apparently, there are no correlations between periods of high temperatures (those bars above zero) and peaks of crime of any type. We note that crime rates are more variable than temperatures, which might be caused either by different hidden factors or just by chance.
+
